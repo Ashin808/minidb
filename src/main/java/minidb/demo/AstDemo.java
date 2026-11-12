@@ -36,7 +36,7 @@ public class AstDemo {
         System.out.println(Operator.fromToken(TokenType.COMMA));
     }
 
-    private static String describe(Statement s) {
+    static String describe(Statement s) {
         return switch (s) {
             case Statement.CreateTable c -> "CREATE TABLE " + c.tableName() + " ("
                     + c.columns().stream().map(AstDemo::column).collect(Collectors.joining(", ")) + ")";
