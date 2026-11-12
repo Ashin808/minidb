@@ -66,5 +66,71 @@ public class BTreeDemo {
             }
         }
         System.out.println("200 shuffled keys: allFound=" + allFound + " sorted=" + sorted);
+
+        deleteDemo();
+    }
+
+    private static void deleteDemo() {
+        System.out.println("\n--- 5b: delete ---");
+
+        // 1. walk through deletes on a small tree
+        BTree t = new BTree(3);
+        for (int i = 1; i <= 10; i++) {
+            t.insert(Value.ofInt(i * 10), new RowId(0, i - 1));
+        }
+        System.out.println(t.dump());
+        int[] order = {70, 10, 20, 30};
+        for (int k : order) {
+            boolean ok = t.delete(Value.ofInt(k), new RowId(0, k / 10 - 1));
+            t.check();                                   // throws if any tree rule is broken
+            System.out.println("delete " + k + " -> " + ok
+                    + " height=" + t.height() + " entries=" + t.size());
+            System.out.println(t.dump());
+        }
+        System.out.println("delete 40 with wrong RowId -> " + t.delete(Value.ofInt(40), new RowId(9, 9)));
+        System.out.println("delete 999 (missing)     -> " + t.delete(Value.ofInt(999), new RowId(0, 0)));
+
+        // 2. duplicate keys: removing one RowId keeps the key, removing the last removes the key
+        BTree d = new BTree(3);
+        d.insert(Value.ofInt(70), new RowId(0, 6));
+        d.insert(Value.ofInt(70), new RowId(1, 0));
+        d.delete(Value.ofInt(70), new RowId(0, 6));
+        System.out.println("after deleting one of two: " + d.search(Value.ofInt(70)));
+        d.delete(Value.ofInt(70), new RowId(1, 0));
+        System.out.println("after deleting both: " + d.search(Value.ofInt(70))
+                + " entries=" + d.size());
+
+        // 3. stress: many shapes, random insert and delete orders, check() after EVERY delete
+        int runs = 0;
+        for (int maxKeys = 3; maxKeys <= 7; maxKeys++) {
+            for (int seed = 1; seed <= 20; seed++) {
+                List<Integer> nums = new ArrayList<>();
+                for (int i = 1; i <= 200; i++) {
+                    nums.add(i);
+                }
+                Collections.shuffle(nums, new Random(seed));
+                BTree big = new BTree(maxKeys);
+                for (int n : nums) {
+                    big.insert(Value.ofInt(n), new RowId(n / 100, n % 100));
+                }
+                big.check();
+
+                Collections.shuffle(nums, new Random(seed + 100));
+                for (int n : nums) {
+                    if (!big.delete(Value.ofInt(n), new RowId(n / 100, n % 100))) {
+                        throw new IllegalStateException("delete failed for " + n);
+                    }
+                    big.check();
+                    if (!big.search(Value.ofInt(n)).isEmpty()) {
+                        throw new IllegalStateException(n + " still found after delete");
+                    }
+                }
+                if (big.size() != 0 || big.height() != 1 || !big.keys().isEmpty()) {
+                    throw new IllegalStateException("tree not empty at the end");
+                }
+                runs++;
+            }
+        }
+        System.out.println("stress: " + runs + " runs (maxKeys 3..7), all passed");
     }
 }
