@@ -64,7 +64,7 @@ public final class WhereEvaluator {
         };
     }
 
-    private static int columnIndex(TableSchema schema, String name) {
+    static int columnIndex(TableSchema schema, String name) {
         List<Column> columns = schema.columns();
         for (int i = 0; i < columns.size(); i++) {
             if (columns.get(i).name().equalsIgnoreCase(name)) {
