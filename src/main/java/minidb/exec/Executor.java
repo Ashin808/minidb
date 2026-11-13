@@ -125,18 +125,23 @@ public class Executor {
 
         // candidate rows: from an index if the WHERE allows it, otherwise every row
         List<Table.StoredRow> candidates;
+        int pagesRead;
         IndexChoice choice = chooseIndex(s.where(), s.tableName());
         if (choice != null) {
             candidates = new ArrayList<>();
-            for (Table.RowId id : choice.index().lookup(choice.comparison().literal())) {
+            List<Table.RowId> ids = choice.index().lookup(choice.comparison().literal());
+            pagesRead = choice.index().lastLookupPageReads();     // tree pages
+            for (Table.RowId id : ids) {
                 Row row = table.read(id);
                 if (row != null) {
                     candidates.add(new Table.StoredRow(id, row));
+                    pagesRead++;                                  // one table page per row fetched
                 }
             }
             lastPlan = "index lookup on " + schema.name() + "(" + choice.index().columnName() + ")";
         } else {
             candidates = table.scan();
+            pagesRead = table.pageCount();                        // a scan reads every table page
             lastPlan = "full scan of " + schema.name();
         }
 
@@ -151,7 +156,7 @@ public class Executor {
                 rows.add(out);
             }
         }
-        return Result.ofRows(names, rows);
+        return Result.ofRows(names, rows).withPlan(lastPlan, pagesRead);
     }
 
     private Result delete(Statement.Delete s) throws IOException {

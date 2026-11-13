@@ -7,8 +7,16 @@ import java.util.List;
 /**
  * What running one statement gives back. Plain data only, so the REST layer
  * in Stage 6 can turn it straight into JSON.
+ * plan = how a SELECT found its rows (empty for other statements);
+ * pagesRead = how many 4 KB pages it touched (0 for other statements).
  */
-public record Result(String message, List<String> columns, List<List<Value>> rows, long elapsedNanos) {
+public record Result(String message, List<String> columns, List<List<Value>> rows,
+                     long elapsedNanos, String plan, int pagesRead) {
+
+    /** Keeps older code working: a result with no plan information. */
+    public Result(String message, List<String> columns, List<List<Value>> rows, long elapsedNanos) {
+        this(message, columns, rows, elapsedNanos, "", 0);
+    }
 
     public static Result ofMessage(String message) {
         return new Result(message, List.of(), List.of(), 0);
@@ -19,7 +27,11 @@ public record Result(String message, List<String> columns, List<List<Value>> row
     }
 
     public Result withElapsed(long nanos) {
-        return new Result(message, columns, rows, nanos);
+        return new Result(message, columns, rows, nanos, plan, pagesRead);
+    }
+
+    public Result withPlan(String plan, int pagesRead) {
+        return new Result(message, columns, rows, elapsedNanos, plan, pagesRead);
     }
 
     public double elapsedMillis() {
