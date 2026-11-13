@@ -71,6 +71,19 @@ public class Table {
         return result;
     }
 
+    /** Reads one row by its address (one page read). Returns null if the slot is empty or out of range. */
+    public Row read(RowId id) throws IOException {
+        if (id.page() < 0 || id.page() >= pager.pageCount() || id.slot() < 0 || id.slot() >= rowsPerPage) {
+            return null;
+        }
+        byte[] page = pager.readPage(id.page());
+        int offset = id.slot() * rowSize;
+        if (page[offset] != LIVE) {
+            return null;
+        }
+        return RowSerializer.deserialize(schema, Arrays.copyOfRange(page, offset, offset + rowSize));
+    }
+
     /** Marks the slot as empty. Returns false if it was already empty. */
     public boolean delete(RowId id) throws IOException {
         byte[] page = pager.readPage(id.page());
