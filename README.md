@@ -7,8 +7,8 @@ storage, a SQL parser, a B-tree index, and a web SQL playground.
 - [x] Stage 1: Page storage layer (Pager)
 - [x] Stage 2: Schema and row format
 - [x] Stage 3: SQL lexer and parser
-- [ ] Stage 4: Query executor
-- [ ] Stage 5: B-tree index
+- [x] Stage 4: Query executor
+- [x] Stage 5: B-tree index
 - [ ] Stage 6: REST API and live playground
 
 ## Tech
