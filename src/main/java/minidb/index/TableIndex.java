@@ -17,8 +17,11 @@ import java.util.List;
 /** An index on one column of one table: column value -> RowIds, stored in a DiskBTree file. */
 public class TableIndex {
 
-    /** A read-only picture of one tree node. children is empty for a leaf. keys are plain Integer or String. */
-    public record NodeView(int page, boolean leaf, List<Object> keys, List<NodeView> children) {}
+    /**
+     * A read-only picture of one tree node. keyCount is the real number of keys;
+     * keys holds only the first few (plain Integer or String). children is empty for a leaf.
+     */
+    public record NodeView(int page, boolean leaf, int keyCount, List<Object> keys, List<NodeView> children) {}
 
     private final String columnName;
     private final int columnIndex;
@@ -90,24 +93,26 @@ public class TableIndex {
         tree.check();
     }
 
-    /** The whole tree as nested plain data (for the REST layer). Reads every node page once. */
-    public NodeView structure() throws IOException {
-        return view(tree.rootPage());
+    /** The whole tree as nested plain data, each node showing at most maxKeys of its keys. */
+    public NodeView structure(int maxKeys) throws IOException {
+        return view(tree.rootPage(), Math.max(0, maxKeys));
     }
 
-    private NodeView view(int page) throws IOException {
+    private NodeView view(int page, int maxKeys) throws IOException {
         DiskNode node = tree.readNode(page);
         List<Object> keys = new ArrayList<>();
-        for (Value key : node.keys) {
+        int shown = Math.min(node.keys.size(), maxKeys);
+        for (int i = 0; i < shown; i++) {
+            Value key = node.keys.get(i);
             keys.add(key.type() == DataType.INT ? (Object) key.asInt() : key.asString());
         }
         List<NodeView> children = new ArrayList<>();
         if (!node.leaf) {
             for (int child : node.children) {
-                children.add(view(child));
+                children.add(view(child, maxKeys));
             }
         }
-        return new NodeView(page, node.leaf, keys, children);
+        return new NodeView(page, node.leaf, node.keys.size(), keys, children);
     }
 
     /** The tree's own text picture: [..] = internal node, (..) = leaf. */
