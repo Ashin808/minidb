@@ -1,6 +1,7 @@
 package minidb.index;
 
 import minidb.catalog.Column;
+import minidb.catalog.DataType;
 import minidb.record.Row;
 import minidb.record.Value;
 import minidb.table.Table;
@@ -10,10 +11,15 @@ import minidb.table.Table.StoredRow;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 /** An index on one column of one table: column value -> RowIds, stored in a DiskBTree file. */
 public class TableIndex {
+
+    /** A read-only picture of one tree node. children is empty for a leaf. keys are plain Integer or String. */
+    public record NodeView(int page, boolean leaf, List<Object> keys, List<NodeView> children) {}
+
     private final String columnName;
     private final int columnIndex;
     private final DiskBTree tree;
@@ -82,6 +88,31 @@ public class TableIndex {
 
     public void check() throws IOException {
         tree.check();
+    }
+
+    /** The whole tree as nested plain data (for the REST layer). Reads every node page once. */
+    public NodeView structure() throws IOException {
+        return view(tree.rootPage());
+    }
+
+    private NodeView view(int page) throws IOException {
+        DiskNode node = tree.readNode(page);
+        List<Object> keys = new ArrayList<>();
+        for (Value key : node.keys) {
+            keys.add(key.type() == DataType.INT ? (Object) key.asInt() : key.asString());
+        }
+        List<NodeView> children = new ArrayList<>();
+        if (!node.leaf) {
+            for (int child : node.children) {
+                children.add(view(child));
+            }
+        }
+        return new NodeView(page, node.leaf, keys, children);
+    }
+
+    /** The tree's own text picture: [..] = internal node, (..) = leaf. */
+    public String dump() throws IOException {
+        return tree.dump();
     }
 
     public void close() throws IOException {
