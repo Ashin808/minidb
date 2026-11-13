@@ -233,6 +233,133 @@ public class DiskBTree {
         return new Split(upKey, upRow, rightPage);
     }
 
+    // ---------- delete ----------
+
+    /** Removes one (key, RowId) entry. Returns false if that exact entry isn't in the tree. */
+    public boolean delete(Value key, RowId id) throws IOException {
+        if (!delete(rootPage, key, id)) {
+            return false;
+        }
+        entryCount--;
+        DiskNode root = readNode(rootPage);
+        if (!root.leaf && root.keys.isEmpty()) {              // root has one child left: tree shrinks a level
+            rootPage = root.children.get(0);
+        }
+        writeMeta();
+        return true;
+    }
+
+    private boolean delete(int page, Value key, RowId id) throws IOException {
+        DiskNode node = readNode(page);
+
+        if (node.leaf) {
+            int i = 0;
+            while (i < node.keys.size() && compare(key, id, node.keys.get(i), node.rowIds.get(i)) > 0) {
+                i++;
+            }
+            if (i >= node.keys.size() || compare(key, id, node.keys.get(i), node.rowIds.get(i)) != 0) {
+                return false;
+            }
+            node.keys.remove(i);
+            node.rowIds.remove(i);
+            writeNode(page, node);
+            return true;
+        }
+
+        int c = childIndex(node, key, id);
+        int childPage = node.children.get(c);
+        if (!delete(childPage, key, id)) {
+            return false;
+        }
+        DiskNode child = readNode(childPage);
+        if (child.keys.size() < minKeys(child)) {
+            rebalance(node, c);                               // child got too empty: fix it from the parent
+            writeNode(page, node);
+        }
+        return true;
+    }
+
+    private int minKeys(DiskNode node) {
+        return (node.leaf ? leafCap : internalCap) / 2;
+    }
+
+    /** Child c of parent has too few entries: borrow from a sibling if one can spare one, else merge. */
+    private void rebalance(DiskNode parent, int c) throws IOException {
+        int childPage = parent.children.get(c);
+        DiskNode child = readNode(childPage);
+
+        int leftPage = c > 0 ? parent.children.get(c - 1) : DiskNode.NO_PAGE;
+        int rightPage = c < parent.children.size() - 1 ? parent.children.get(c + 1) : DiskNode.NO_PAGE;
+        DiskNode left = leftPage != DiskNode.NO_PAGE ? readNode(leftPage) : null;
+        DiskNode right = rightPage != DiskNode.NO_PAGE ? readNode(rightPage) : null;
+
+        if (left != null && left.keys.size() > minKeys(left)) {
+            borrowFromLeft(parent, c, leftPage, left, childPage, child);
+        } else if (right != null && right.keys.size() > minKeys(right)) {
+            borrowFromRight(parent, c, childPage, child, rightPage, right);
+        } else if (left != null) {
+            merge(parent, c - 1, leftPage, left, child);          // child folds into its left sibling
+        } else {
+            merge(parent, c, childPage, child, right);            // right sibling folds into child
+        }
+    }
+
+    private void borrowFromLeft(DiskNode parent, int c, int leftPage, DiskNode left,
+                                int childPage, DiskNode child) throws IOException {
+        int last = left.keys.size() - 1;
+        if (child.leaf) {
+            child.keys.add(0, left.keys.remove(last));
+            child.rowIds.add(0, left.rowIds.remove(last));
+            parent.keys.set(c - 1, child.keys.get(0));        // new separator = first entry of the right node
+            parent.rowIds.set(c - 1, child.rowIds.get(0));
+        } else {
+            child.keys.add(0, parent.keys.get(c - 1));        // separator rotates down...
+            child.rowIds.add(0, parent.rowIds.get(c - 1));
+            child.children.add(0, left.children.remove(left.children.size() - 1));
+            parent.keys.set(c - 1, left.keys.remove(last));   // ...and the sibling's last entry rotates up
+            parent.rowIds.set(c - 1, left.rowIds.remove(last));
+        }
+        writeNode(leftPage, left);
+        writeNode(childPage, child);
+    }
+
+    private void borrowFromRight(DiskNode parent, int c, int childPage, DiskNode child,
+                                 int rightPage, DiskNode right) throws IOException {
+        if (child.leaf) {
+            child.keys.add(right.keys.remove(0));
+            child.rowIds.add(right.rowIds.remove(0));
+            parent.keys.set(c, right.keys.get(0));
+            parent.rowIds.set(c, right.rowIds.get(0));
+        } else {
+            child.keys.add(parent.keys.get(c));
+            child.rowIds.add(parent.rowIds.get(c));
+            child.children.add(right.children.remove(0));
+            parent.keys.set(c, right.keys.remove(0));
+            parent.rowIds.set(c, right.rowIds.remove(0));
+        }
+        writeNode(childPage, child);
+        writeNode(rightPage, right);
+    }
+
+    /** Folds `right` into `left` and removes the separator between them from the parent. */
+    private void merge(DiskNode parent, int sep, int leftPage, DiskNode left, DiskNode right) throws IOException {
+        if (left.leaf) {
+            left.keys.addAll(right.keys);
+            left.rowIds.addAll(right.rowIds);
+            left.next = right.next;                           // keep the leaf chain intact
+        } else {
+            left.keys.add(parent.keys.get(sep));              // internal merge pulls the separator DOWN
+            left.rowIds.add(parent.rowIds.get(sep));
+            left.keys.addAll(right.keys);
+            left.rowIds.addAll(right.rowIds);
+            left.children.addAll(right.children);
+        }
+        parent.keys.remove(sep);
+        parent.rowIds.remove(sep);
+        parent.children.remove(sep + 1);                      // the right page is now abandoned
+        writeNode(leftPage, left);
+    }
+
     // ---------- inspection ----------
 
     /** Number of levels, counting the leaves (a lone leaf = 1). */
