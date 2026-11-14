@@ -1,0 +1,6 @@
+target/
+frontend/
+demo_data/
+*.db
+.idea/
+.git/
