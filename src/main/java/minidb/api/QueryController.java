@@ -18,7 +18,8 @@ import java.util.List;
 @RequestMapping("/api")
 public class QueryController {
 
-    public record QueryRequest(String sql) {}
+    /** useIndexes is optional: missing or null means true. */
+    public record QueryRequest(String sql, Boolean useIndexes) {}
 
     /** The JSON reply. Rows hold plain numbers and strings so the React table can render them directly. */
     public record QueryResponse(String message, List<String> columns, List<List<Object>> rows,
@@ -38,7 +39,8 @@ public class QueryController {
 
         Result result;
         synchronized (executor) {          // the engine is single-threaded, so one request at a time
-            result = executor.execute(request.sql());
+            boolean useIndexes = request.useIndexes() == null || request.useIndexes();
+            result = executor.execute(request.sql(), useIndexes);
         }
         return toResponse(result);
     }

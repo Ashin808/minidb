@@ -27,6 +27,7 @@ public class Executor {
 
     private final Database db;
     private String lastPlan = "none yet";
+    private boolean useIndexes = true;   // false = always full scan (used by the playground's Compare button)
 
     public Executor(Database db) {
         this.db = db;
@@ -42,6 +43,17 @@ public class Executor {
         long start = System.nanoTime();
         Result result = execute(Parser.parse(sql));
         return result.withElapsed(System.nanoTime() - start);
+    }
+
+    /** Same as execute(sql), but with indexes switched off or on for this one call. */
+    public Result execute(String sql, boolean useIndexes) throws IOException {
+        boolean before = this.useIndexes;
+        this.useIndexes = useIndexes;
+        try {
+            return execute(sql);
+        } finally {
+            this.useIndexes = before;      // never leave the switch off for the next request
+        }
     }
 
     public Result execute(Statement statement) throws IOException {
@@ -126,7 +138,7 @@ public class Executor {
         // candidate rows: from an index if the WHERE allows it, otherwise every row
         List<Table.StoredRow> candidates;
         int pagesRead;
-        IndexChoice choice = chooseIndex(s.where(), s.tableName());
+        IndexChoice choice = useIndexes ? chooseIndex(s.where(), s.tableName()) : null;
         if (choice != null) {
             candidates = new ArrayList<>();
             List<Table.RowId> ids = choice.index().lookup(choice.comparison().literal());
