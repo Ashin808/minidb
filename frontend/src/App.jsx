@@ -25,7 +25,6 @@ export default function App() {
     const treeRef = useRef(null);
     const scrollToTreeNext = useRef(false);
 
-    // what the guide needs to know, taken from the server's table list
     const demo = tables.find((t) => t.name === "demo");
     const hasData = !!demo && demo.pages >= 10;
     const hasIndex = !!demo && demo.indexes.some((ix) => ix.column === "id");
@@ -34,7 +33,7 @@ export default function App() {
         try {
             setTables(await listTables());
         } catch {
-            setTables([]);   // the error box from run() already tells the user the API is down
+            setTables([]);
         }
     }
 
@@ -42,7 +41,6 @@ export default function App() {
         refreshTables();
     }, []);
 
-    // redraw the tree whenever the chosen index changes or the tables list refreshes (after every query)
     useEffect(() => {
         if (!treeTarget) {
             setTree(null);
@@ -67,14 +65,12 @@ export default function App() {
         };
     }, [treeTarget, tables]);
 
-    // bring a new result into view, so a guide button visibly does something
     useEffect(() => {
         if (result || comparison || error) {
             resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }
     }, [result, comparison, error]);
 
-    // scroll to the tree only right after the user asked for it (not on every refresh)
     useEffect(() => {
         if (tree && scrollToTreeNext.current) {
             scrollToTreeNext.current = false;
@@ -82,7 +78,6 @@ export default function App() {
         }
     }, [tree]);
 
-    // text is optional: guide buttons pass their own SQL, the Run button uses the box. Returns true on success.
     async function run(text) {
         const q = typeof text === "string" ? text : sql;
         if (running || !q.trim()) return false;
@@ -99,7 +94,7 @@ export default function App() {
             setError(e.message);
         } finally {
             setRunning(false);
-            refreshTables();   // CREATE TABLE / CREATE INDEX / INSERT change what the sidebar shows
+            refreshTables();
         }
         return ok;
     }
@@ -159,7 +154,7 @@ export default function App() {
     const steps = [
         {
             title: "Add 5000 rows",
-            text: "Creates a table called demo and fills it. Data is stored in real 4 KB pages on disk.",
+            text: "Creates a table called demo and fills it. Rows are stored in real 4 KB pages on disk.",
             button: hasData ? "Done" : "Add 5000 rows",
             done: hasData,
             disabled: hasData,
@@ -167,7 +162,7 @@ export default function App() {
         },
         {
             title: "Find one row without an index",
-            text: "The engine has to read every page of the table to find id 4000. Note the pages read.",
+            text: "The engine must read every page of the table to find id 4000.",
             button: "Run the query",
             done: ranScan,
             disabled: !hasData,
@@ -185,7 +180,7 @@ export default function App() {
         },
         {
             title: "Compare scan vs index",
-            text: "Runs the same query both ways and shows pages read and time side by side.",
+            text: "Runs the same query both ways and shows which pages each one had to read.",
             button: "Compare",
             done: !!comparison,
             disabled: !hasIndex,
@@ -244,7 +239,7 @@ export default function App() {
                     />
                     <button onClick={() => seed(seedRows)} disabled={running}>Add rows</button>
                 </div>
-                <p className="hint">Adds rows to table <b>demo</b> (created if missing). Max 20000.</p>
+                <p className="hint">Adds rows to table <b>demo</b>. Max 20000.</p>
                 {seedNote && <p className="hint">{seedNote}</p>}
             </aside>
 
@@ -258,13 +253,13 @@ export default function App() {
                 </header>
 
                 <section className="guide">
-                    <h2>Try it in 5 steps</h2>
-                    <p className="hint">See how an index turns a full table scan into a few page reads.</p>
+                    <h2>See what an index does</h2>
                     <ol>
                         {steps.map((s, i) => (
                             <li key={s.title} className={s.done ? "step done" : "step"}>
+                                <span className="step-num">{s.done ? "✓" : i + 1}</span>
                                 <div className="step-body">
-                                    <b>{s.done ? "✓ " : ""}{i + 1}. {s.title}</b>
+                                    <b>{s.title}</b>
                                     <div className="hint">{s.text}</div>
                                 </div>
                                 <button onClick={s.action} disabled={running || s.disabled}>{s.button}</button>
@@ -273,22 +268,24 @@ export default function App() {
                     </ol>
                 </section>
 
-                <h2 className="section-title">Or write your own SQL</h2>
-                <textarea
-                    className="sql"
-                    value={sql}
-                    onChange={(e) => setSql(e.target.value)}
-                    onKeyDown={onKeyDown}
-                    rows={4}
-                    spellCheck={false}
-                />
-                <div className="actions">
-                    <button className="primary" onClick={() => run()} disabled={running}>
-                        {running ? "Running..." : "Run"}
-                    </button>
-                    <button onClick={() => compare()} disabled={running}>Compare scan vs index</button>
-                    <span className="hint">Ctrl+Enter · supports CREATE TABLE, INSERT, SELECT ... WHERE, DELETE, CREATE INDEX</span>
-                </div>
+                <details className="own-sql">
+                    <summary>Write your own SQL</summary>
+                    <textarea
+                        className="sql"
+                        value={sql}
+                        onChange={(e) => setSql(e.target.value)}
+                        onKeyDown={onKeyDown}
+                        rows={4}
+                        spellCheck={false}
+                    />
+                    <div className="actions">
+                        <button className="primary" onClick={() => run()} disabled={running}>
+                            {running ? "Running..." : "Run"}
+                        </button>
+                        <button onClick={() => compare()} disabled={running}>Compare scan vs index</button>
+                        <span className="hint">Ctrl+Enter · CREATE TABLE, INSERT, SELECT ... WHERE, DELETE, CREATE INDEX</span>
+                    </div>
+                </details>
 
                 <div ref={resultsRef} style={{ scrollMarginTop: 12 }}>
                     {error && <div className="error">{error}</div>}
@@ -310,35 +307,57 @@ export default function App() {
     );
 }
 
+/** One little square per table page. `touched` of them are lit. */
+function PageMap({ total, touched, tone }) {
+    const shown = Math.min(total, 300);
+    const lit = Math.min(touched, shown);
+    return (
+        <div className="page-map" title={`${touched} of ${total} pages`}>
+            {Array.from({ length: shown }, (_, i) => (
+                <span key={i} className={i < lit ? `pg ${tone}` : "pg"} />
+            ))}
+        </div>
+    );
+}
+
 function CompareView({ scan, index }) {
     const sameTable = scan.plan === index.plan;
-    return (
-        <section className="compare">
-            <h3>Full scan vs index</h3>
-            {sameTable ? (
+    if (sameTable) {
+        return (
+            <section className="hero">
                 <p className="hint">
-                    No index can answer this query (needs <b>col = value</b> on an indexed column), so both runs used: {scan.plan}.
+                    No index can answer this query (it needs <b>col = value</b> on an indexed column), so both runs used: {scan.plan}.
                 </p>
-            ) : (
-                <>
-                    <div className="compare-grid">
-                        <div className="card">
-                            <b>{scan.plan}</b>
-                            <div className="big">{scan.pagesRead} pages</div>
-                            <div>time: {scan.elapsedMs.toFixed(3)} ms</div>
-                        </div>
-                        <div className="card good">
-                            <b>{index.plan}</b>
-                            <div className="big">{index.pagesRead} pages</div>
-                            <div>time: {index.elapsedMs.toFixed(3)} ms</div>
-                        </div>
-                    </div>
-                    <p className="verdict">
-                        The index read <b>{(scan.pagesRead / index.pagesRead).toFixed(1)}x fewer pages</b>
-                        {" "}and was <b>{(scan.elapsedMs / index.elapsedMs).toFixed(1)}x faster</b>.
-                    </p>
-                </>
-            )}
+            </section>
+        );
+    }
+    const total = scan.pagesRead;
+    return (
+        <section className="hero">
+            <div className="hero-numbers">
+                <span className="hero-from">{scan.pagesRead}</span>
+                <span className="hero-arrow">→</span>
+                <span className="hero-to">{index.pagesRead}</span>
+                <span className="hero-unit">pages read</span>
+            </div>
+            <p className="verdict">
+                The index read <b>{(scan.pagesRead / index.pagesRead).toFixed(1)}x fewer pages</b>
+                {" "}and was <b>{(scan.elapsedMs / index.elapsedMs).toFixed(1)}x faster</b>.
+            </p>
+
+            <div className="maps">
+                <div className="map-col">
+                    <b>{scan.plan}</b>
+                    <div className="hint">{scan.elapsedMs.toFixed(3)} ms · every page is read</div>
+                    <PageMap total={total} touched={scan.pagesRead} tone="scan" />
+                </div>
+                <div className="map-col">
+                    <b>{index.plan}</b>
+                    <div className="hint">{index.elapsedMs.toFixed(3)} ms · only a few pages are read</div>
+                    <PageMap total={total} touched={index.pagesRead} tone="index" />
+                </div>
+            </div>
+            <p className="hint">Each square is one 4 KB page of the table.</p>
         </section>
     );
 }
@@ -347,7 +366,7 @@ function ResultView({ result }) {
     const isQuery = result.columns.length > 0;
     const shown = result.rows.slice(0, MAX_SHOWN);
     return (
-        <section>
+        <section className="result">
             <p className="message">{result.message}</p>
 
             {isQuery && shown.length > 0 && (
