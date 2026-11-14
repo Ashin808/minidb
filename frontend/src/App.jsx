@@ -13,6 +13,7 @@ export default function App() {
     const [tables, setTables] = useState([]);
     const [seedRows, setSeedRows] = useState(1000);
     const [seedNote, setSeedNote] = useState("");
+    const [comparison, setComparison] = useState(null);
 
     async function refreshTables() {
         try {
@@ -30,6 +31,7 @@ export default function App() {
         if (running || !sql.trim()) return;
         setRunning(true);
         setError("");
+        setComparison(null);
         try {
             setResult(await runQuery(sql));
         } catch (e) {
@@ -38,6 +40,30 @@ export default function App() {
         } finally {
             setRunning(false);
             refreshTables();   // CREATE TABLE / CREATE INDEX / INSERT change what the sidebar shows
+        }
+    }
+
+    async function compare() {
+        if (running || !sql.trim()) return;
+        if (!/^\s*select\b/i.test(sql)) {
+            setError("Compare only works with SELECT (it runs the query several times).");
+            return;
+        }
+        setRunning(true);
+        setError("");
+        setComparison(null);
+        try {
+            await runQuery(sql, false);                 // warm-up runs, so the JVM and file cache are fair to both
+            await runQuery(sql, true);
+            const scan = await runQuery(sql, false);
+            const index = await runQuery(sql, true);
+            setComparison({ scan, index });
+            setResult(index);
+        } catch (e) {
+            setResult(null);
+            setError(e.message);
+        } finally {
+            setRunning(false);
         }
     }
 
@@ -119,13 +145,48 @@ export default function App() {
                     <button onClick={run} disabled={running}>
                         {running ? "Running..." : "Run"}
                     </button>
+                    <button onClick={compare} disabled={running}>Compare scan vs index</button>
                     <span className="hint">Ctrl+Enter</span>
                 </div>
 
                 {error && <div className="error">{error}</div>}
+                {comparison && <CompareView scan={comparison.scan} index={comparison.index} />}
                 {result && <ResultView result={result} />}
             </main>
         </div>
+    );
+}
+
+function CompareView({ scan, index }) {
+    const sameTable = scan.plan === index.plan;
+    return (
+        <section className="compare">
+            <h3>Full scan vs index</h3>
+            {sameTable ? (
+                <p className="hint">
+                    No index can answer this query (needs <b>col = value</b> on an indexed column), so both runs used: {scan.plan}.
+                </p>
+            ) : (
+                <div className="compare-grid">
+                    <div className="card">
+                        <b>{scan.plan}</b>
+                        <div>pages read: {scan.pagesRead}</div>
+                        <div>time: {scan.elapsedMs.toFixed(3)} ms</div>
+                    </div>
+                    <div className="card good">
+                        <b>{index.plan}</b>
+                        <div>pages read: {index.pagesRead}</div>
+                        <div>time: {index.elapsedMs.toFixed(3)} ms</div>
+                    </div>
+                </div>
+            )}
+            {!sameTable && (
+                <p>
+                    Index read <b>{(scan.pagesRead / index.pagesRead).toFixed(1)}x fewer pages</b> and
+                    was <b>{(scan.elapsedMs / index.elapsedMs).toFixed(1)}x faster</b>.
+                </p>
+            )}
+        </section>
     );
 }
 

@@ -16,11 +16,11 @@ async function request(path, options) {
     return data;
 }
 
-export function runQuery(sql) {
+export function runQuery(sql, useIndexes = true) {
     return request("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql }),
+        body: JSON.stringify({ sql, useIndexes }),
     });
 }
 
