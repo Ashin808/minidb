@@ -31,3 +31,7 @@ export function listTables() {
 export function seedDemo(rows) {
     return request(`/api/demo/seed?rows=${rows}`, { method: "POST" });
 }
+
+export function getTree(table, column, maxKeys = 8) {
+    return request(`/api/tables/${table}/indexes/${column}/dump?maxKeys=${maxKeys}`);
+}

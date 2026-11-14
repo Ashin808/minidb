@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { listTables, runQuery, seedDemo } from "./api";
+import { getTree, listTables, runQuery, seedDemo } from "./api";
+import TreeView from "./TreeView";
 import "./App.css";
 
 const EXAMPLE = "SELECT * FROM users WHERE id = 2";
@@ -14,6 +15,9 @@ export default function App() {
     const [seedRows, setSeedRows] = useState(1000);
     const [seedNote, setSeedNote] = useState("");
     const [comparison, setComparison] = useState(null);
+    const [treeTarget, setTreeTarget] = useState(null);   // { table, column } or null
+    const [tree, setTree] = useState(null);
+    const [treeError, setTreeError] = useState("");
 
     async function refreshTables() {
         try {
@@ -26,6 +30,31 @@ export default function App() {
     useEffect(() => {
         refreshTables();
     }, []);
+
+    // redraw the tree whenever the chosen index changes or the tables list refreshes (after every query)
+    useEffect(() => {
+        if (!treeTarget) {
+            setTree(null);
+            return;
+        }
+        let cancelled = false;
+        getTree(treeTarget.table, treeTarget.column)
+            .then((t) => {
+                if (!cancelled) {
+                    setTree(t);
+                    setTreeError("");
+                }
+            })
+            .catch((e) => {
+                if (!cancelled) {
+                    setTree(null);
+                    setTreeError(e.message);
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [treeTarget, tables]);
 
     async function run() {
         if (running || !sql.trim()) return;
@@ -45,13 +74,13 @@ export default function App() {
 
     async function compare() {
         if (running || !sql.trim()) return;
+        setComparison(null);
         if (!/^\s*select\b/i.test(sql)) {
             setError("Compare only works with SELECT (it runs the query several times).");
             return;
         }
         setRunning(true);
         setError("");
-        setComparison(null);
         try {
             await runQuery(sql, false);                 // warm-up runs, so the JVM and file cache are fair to both
             await runQuery(sql, true);
@@ -108,9 +137,14 @@ export default function App() {
                         </div>
                         <div className="hint">{t.pages} pages</div>
                         {t.indexes.map((ix) => (
-                            <div key={ix.column} className="index-tag">
+                            <button
+                                key={ix.column}
+                                className="index-tag"
+                                title="Click to draw this B+ tree"
+                                onClick={() => setTreeTarget({ table: t.name, column: ix.column })}
+                            >
                                 index on {ix.column}: {ix.entries} entries, height {ix.height}
-                            </div>
+                            </button>
                         ))}
                     </div>
                 ))}
@@ -152,6 +186,14 @@ export default function App() {
                 {error && <div className="error">{error}</div>}
                 {comparison && <CompareView scan={comparison.scan} index={comparison.index} />}
                 {result && <ResultView result={result} />}
+
+                {treeError && <div className="error">{treeError}</div>}
+                {tree && (
+                    <>
+                        <TreeView tree={tree} />
+                        <button className="link" onClick={() => setTreeTarget(null)}>Hide tree</button>
+                    </>
+                )}
             </main>
         </div>
     );
